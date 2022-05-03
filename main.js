@@ -219,65 +219,72 @@ class Main {
     }
   }
 
-   startLiquidate() {
-    for (let i = 0; i < this.accounts.length; i++) {
-      const user = this.accounts[i] // Item from array returned by AccountService API
-      console.log(user)
-      if (!user['liquidated']) continue
+   startLiquidate(timeout) {
+     setInterval(
+         async () => {
+           console.log('Start liquidate !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+           console.log("Amount of accounts to liquidate: " + this.accounts.length)
+           for (let i = 0; i < this.accounts.length; i++) {
+             if (!this.accounts[i]['liquidated']) continue;
+             const user = this.accounts[i] // Item from array returned by AccountService API
+             console.log('user = ' + user)
 
-      let bestAssetToRepay = null;
-      let bestAssetToSeize = null;
-      let maxRepayable_Eth = 0.0;
-      let maxSeizable_Eth = 0.0;
+             let bestAssetToRepay = null;
+             let bestAssetToSeize = null;
+             let maxRepayable_Eth = 0.0;
+             let maxSeizable_Eth = 0.0;
 
-     // const [liquidity] = await Comptroller.mainnet.accountLiquidityOf(user.address);
-      user.tokens.forEach(token => {
-        const repayable_Eth = token.borrow_balance_underlying * this.cTokenUnderlyingPrices_Eth[token.symbol] * this.closeFactor;
-        console.log('repayable_Eth = '+ repayable_Eth)
-        const seizable_Eth = token.supply_balance_underlying * this.cTokenUnderlyingPrices_Eth[token.symbol] / this.liquidationIncentive;
-        console.log('seizable_Eth = '+ seizable_Eth)
+             const liquidity = await Comptroller.mainnet.accountLiquidityOf(user.address);
+             console.log('liquidity = '+liquidity)
+             user.tokens.forEach(token => {
+               const repayable_Eth = token.borrow_balance_underlying * this.cTokenUnderlyingPrices_Eth[token.symbol] * this.closeFactor;
+               console.log('token.borrow_balance_underlying = '+ token.borrow_balance_underlying)
+               console.log('repayable_Eth = ' + repayable_Eth)
+               const seizable_Eth = token.supply_balance_underlying * this.cTokenUnderlyingPrices_Eth[token.symbol] / this.liquidationIncentive;
+               console.log('token.supply_balance_underlying = '+ token.supply_balance_underlying)
+               console.log('seizable_Eth = ' + seizable_Eth)
 
+               if (
+                   repayable_Eth > maxRepayable_Eth &&
+                   seizable_Eth > maxSeizable_Eth
+               ) {
+                 if (repayable_Eth <= maxSeizable_Eth) {
+                   // In this case, raising maxRepayable_Eth actually increases rewards
+                   // (maxSeizable_Eth is sufficient to maximize liquidation incentive)
+                   maxRepayable_Eth = repayable_Eth;
+                   bestAssetToRepay = token;
+                 } else {
+                   // In this case, raising maxRepayable_Eth wouldn't lead to increased rewards
+                   // so we increase maxSeizable_Eth instead
+                   maxSeizable_Eth = seizable_Eth;
+                   bestAssetToSeize = token;
+                 }
+               } else if (repayable_Eth > maxRepayable_Eth) {
+                 maxRepayable_Eth = repayable_Eth;
+                 bestAssetToRepay = token;
+               } else if (seizable_Eth > maxSeizable_Eth) {
+                 maxSeizable_Eth = seizable_Eth;
+                 bestAssetToSeize = token;
+               }
 
-        if (
-            repayable_Eth > maxRepayable_Eth &&
-            seizable_Eth > maxSeizable_Eth
-        ) {
-          if (repayable_Eth <= maxSeizable_Eth) {
-            // In this case, raising maxRepayable_Eth actually increases rewards
-            // (maxSeizable_Eth is sufficient to maximize liquidation incentive)
-            maxRepayable_Eth = repayable_Eth;
-            bestAssetToRepay = token;
-          } else {
-            // In this case, raising maxRepayable_Eth wouldn't lead to increased rewards
-            // so we increase maxSeizable_Eth instead
-            maxSeizable_Eth = seizable_Eth;
-            bestAssetToSeize = token;
-          }
-        } else if (repayable_Eth > maxRepayable_Eth) {
-          maxRepayable_Eth = repayable_Eth;
-          bestAssetToRepay = token;
-        } else if (seizable_Eth > maxSeizable_Eth) {
-          maxSeizable_Eth = seizable_Eth;
-          bestAssetToSeize = token;
-        }
-
-        const amount = Math.min(maxRepayable_Eth, maxSeizable_Eth);
-        console.log('amount = '+amount)
-        const profitability = amount * (this.liquidationIncentive - 1.0);
-        console.log('profitability = '+profitability)
-        if (profitability > this.gasPrices[0] ) {//&& liquidity < 0) {
-          bestAssetToRepay.liquidate_uUnits(user.address, amount, bestAssetToSeize, process.env.PUBLIC_KEY, this.gasPrices[0]);
-        }
-      });
-    }
-  }
+               const amount = Math.min(maxRepayable_Eth, maxSeizable_Eth);
+               console.log('amount = ' + amount)
+               const profitability = amount * (this.liquidationIncentive - 1.0);
+               console.log('profitability = ' + profitability)
+               if (profitability > this.gasPrices[0] && liquidity < 0) {
+                 bestAssetToRepay.liquidate_uUnits(user.address, amount, bestAssetToSeize, process.env.PUBLIC_KEY, this.gasPrices[0]);
+               }
+             });
+           }
+         }, timeout);
+   }
 }
 
 const main = new Main();
-main.startFetchingAccounts(4 * 60 * 10);
-main.startFetchingCloseFactor(2 * 60 * 10);
-main.startFetchingLiquidationIncentive(2 * 60 * 10);
-main.startFetchingGasPrices(60 * 10);
-main.startFetchingCTokenUnderlying(90 * 10);
-//main.startFetchingMyBalances(5 * 60 * 1000);
-main.startLiquidate();
+main.startFetchingAccounts(4 * 60 * 1000);
+main.startFetchingCloseFactor(2 * 60 * 1000);
+main.startFetchingLiquidationIncentive(2 * 60 * 1000);
+main.startFetchingGasPrices(60 * 1000);
+main.startFetchingCTokenUnderlying(2 * 90 * 1000);
+main.startFetchingMyBalances(5 * 60 * 1000);
+main.startLiquidate(5 * 60 * 1000);
